@@ -1,0 +1,177 @@
+---
+title: "TDA on Penn data"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(mice)
+```
+
+```{r}
+# clin_course <- read_csv('data/LocalPatientClinicalCourseSHIFTED-UPenn.csv')
+old_labs_raw <- read_csv('data/LocalPatientObservations-UPenn.csv')
+penn_labs_raw <- read_csv('data/labs_long_thrombo.csv') %>% 
+  rename('patient_num' = pat_deid,
+         'concept_code' = loinc_code,
+         'value' = new_value2
+         )
+colnames(penn_labs_raw)
+colnames(old_labs_raw)
+
+table(penn_labs_raw$severe_ind)
+table(penn_labs_raw$concept_type)
+# Ignore MED-CLASS for now because all -999 values
+# penn_labs_raw %>% 
+#   filter(concept_type == 'MED-CLASS', value != -999)
+# Loinc mapping to local terms
+# downloaded from https://loinc.org/file-access/download-id/8960/
+# loinc <- read_csv('data/loinc/Loinc.csv') %>% 
+#   select(LOINC_NUM, COMPONENT)
+loinc <- read_csv('data/loinc-map.csv')
+colnames(loinc)
+```
+
+
+```{r}
+penn_labs <- penn_labs_raw %>% 
+  # filter(concept_type != 'MED-CLASS') %>% 
+  left_join(loinc, by = c('concept_code' = 'LOINC')) %>% 
+  select(- c(concept_code, reference_unit, severe_ind)) %>% 
+  # mutate(short_name = gsub(' |-', '_', short_name)) %>% 
+  pivot_wider(id_cols = c(patient_num, days_since_admission), 
+              names_from = short_name, values_from = value,
+              values_fn = median) %>%
+  arrange(patient_num, days_since_admission) %>% 
+  rownames_to_column('id') %>%
+  rename('covid_id' = patient_num, 'time' = days_since_admission) %>% 
+  mutate(id = as.integer(id)) %>% 
+  {.}
+non_lab_value_names <- c('id', 'covid_id', 'time')
+lab_value_names <- setdiff(names(penn_labs), non_lab_value_names)
+```
+
+```{r}
+is.na(penn_labs) %>% rowSums() %>% sort() %>% table()
+```
+
+"Leukocytes", "Coagulationtissuefactorinduced"  
+
+```{r}
+is.na(penn_labs) %>% colSums() %>% sort()
+hist(is.na(penn_labs) %>% rowSums())
+
+# penn_labs$patient_num %>% unique() %>% length()
+# 
+# # Only 2 patients with D-dimer value:
+# penn_labs %>% 
+#   filter(!is.na(`Fibrin D-dimer FEU`)) %>% 
+#   nrow()
+```
+
+```{r}
+# lab_values_mat <- penn_labs[, lab_value_names] %>%
+#   mice::mice(m = 5, maxit = 50, meth = 'pmm', seed = 500) %>% # imputation
+#   complete(1) %>%
+#   scale()
+# save(lab_values_mat, file = 'data/lab_values_mat.rda')
+load('data/lab_values_mat.rda')
+```
+
+
+```{r}
+n_intervals <- 6
+p_overlaps <- 60
+n_clusts <- 8
+library(tdapseudotime)
+f_sim_map <- map_tda(lab_values_mat,
+                     num_intervals = c(n_intervals, n_intervals),
+                     percent_overlap = p_overlaps,
+                     num_bins_when_clustering = n_clusts)
+f_graph <- make_tda_graph(
+  f_sim_map, 
+  data = penn_labs, 
+  enrich_var = 'time', # enrich topology by time for now
+  color_method = 'clust_color',
+  my_colors = my_colors
+)
+```
+
+```{r}
+out_trajectories <- find_trajectories(penn_labs, f_sim_map, f_graph)
+out_list <- compute_similarity(penn_labs, f_graph$node_color, out_trajectories, f_sim_map)
+```
+
+```{r out.width=12}
+similarity_df <- out_list[[1]]
+id_node_cluster <- out_list[[2]]
+most_similar_traj <- similarity_df %>%
+  group_by(covid_id) %>%
+  slice(which.max(SJ)) # use Jaccard similarity
+
+head(most_similar_traj, 10)
+
+centroids <- penn_labs[, c('id', 'time', lab_value_names)] %>% 
+  left_join(id_node_cluster[, c('id', 'node')], by = 'id') %>% 
+  group_by(node) %>% 
+  summarise(across(.fns = mean), .groups = 'drop') %>% 
+  select(-id)
+
+node_color <- f_graph$node_color
+# save(centroids, node_color, out_trajectories, file = '../data/centroids.rda')
+```
+
+## Write output
+```{r}
+data_out <- most_similar_traj %>% select(covid_id, clusterTraj)
+table(data_out$clusterTraj)
+```
+
+## Visualizations
+
+```{r}
+plot_dat <- penn_labs %>% 
+  left_join(id_node_cluster %>% distinct(covid_id, id, cluster), 
+            by = c('id', 'covid_id'))
+
+plot_dat %>% 
+  ggplot(aes(x = cluster, y = time, fill = cluster)) +
+  geom_boxplot(alpha = 0.8) + 
+  scale_fill_manual(values = f_graph$pal$color) + 
+  scale_color_manual(values = f_graph$pal$color) +
+  theme(legend.position = "none",
+        plot.title = element_text(size = 8, hjust = 0.5))
+
+plot_dat %>% 
+  select(cluster, all_of(lab_value_names)) %>% 
+  pivot_longer(- cluster, names_to = 'Lab', values_to = 'lab_value') %>% 
+  ggplot(aes(x = cluster, y = lab_value, fill = cluster)) +
+  geom_boxplot(alpha = 0.8) + 
+  labs(x = NULL, y = NULL) +
+  scale_fill_manual(values = f_graph$pal$color) + 
+  scale_color_manual(values = f_graph$pal$color) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Lab, scales = 'free_y')
+
+processed_data_traj <- penn_labs %>% 
+  left_join(most_similar_traj, by = c("covid_id")) %>% 
+  mutate(clusterTraj = as.factor(clusterTraj), time) %>%
+  select(time, clusterTraj, all_of(lab_value_names)) %>% 
+  distinct()
+```
+
+```{r fig.width=12, fig.height=8, warning=FALSE}
+processed_data_traj  %>% 
+  pivot_longer(- c(time, clusterTraj), 
+               names_to = 'Lab', values_to = 'lab_value') %>% 
+  ggplot(aes(time, lab_value, colour = clusterTraj, 
+             group = clusterTraj, fill = clusterTraj)) +
+  geom_smooth(method = "loess") +
+  theme(legend.position = "none") +
+  facet_wrap(~ Lab, scales = 'free_y')
+```
+
+
+
+
+

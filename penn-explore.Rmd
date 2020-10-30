@@ -6,28 +6,20 @@ output: html_document
 ```{r}
 library(tidyverse)
 library(mice)
+theme_set(theme_bw() + 
+            theme(legend.title = element_blank(),
+                  panel.grid.minor = element_blank()))
 ```
 
 ```{r}
 # clin_course <- read_csv('data/LocalPatientClinicalCourseSHIFTED-UPenn.csv')
 old_labs_raw <- read_csv('data/LocalPatientObservations-UPenn.csv')
-penn_labs_raw <- read_csv('data/labs_long_thrombo.csv') %>% 
-  rename('patient_num' = pat_deid,
-         'concept_code' = loinc_code,
-         'value' = new_value2
-         )
+penn_labs_raw <- read_csv('data/labs_long_thrombo_v2.csv')
 colnames(penn_labs_raw)
 colnames(old_labs_raw)
 
 table(penn_labs_raw$severe_ind)
 table(penn_labs_raw$concept_type)
-# Ignore MED-CLASS for now because all -999 values
-# penn_labs_raw %>% 
-#   filter(concept_type == 'MED-CLASS', value != -999)
-# Loinc mapping to local terms
-# downloaded from https://loinc.org/file-access/download-id/8960/
-# loinc <- read_csv('data/loinc/Loinc.csv') %>% 
-#   select(LOINC_NUM, COMPONENT)
 loinc <- read_csv('data/loinc-map.csv')
 colnames(loinc)
 ```
@@ -35,10 +27,7 @@ colnames(loinc)
 
 ```{r}
 penn_labs <- penn_labs_raw %>% 
-  # filter(concept_type != 'MED-CLASS') %>% 
   left_join(loinc, by = c('concept_code' = 'LOINC')) %>% 
-  select(- c(concept_code, reference_unit, severe_ind)) %>% 
-  # mutate(short_name = gsub(' |-', '_', short_name)) %>% 
   pivot_wider(id_cols = c(patient_num, days_since_admission), 
               names_from = short_name, values_from = value,
               values_fn = median) %>%
@@ -55,18 +44,10 @@ lab_value_names <- setdiff(names(penn_labs), non_lab_value_names)
 is.na(penn_labs) %>% rowSums() %>% sort() %>% table()
 ```
 
-"Leukocytes", "Coagulationtissuefactorinduced"  
-
 ```{r}
 is.na(penn_labs) %>% colSums() %>% sort()
 hist(is.na(penn_labs) %>% rowSums())
-
-# penn_labs$patient_num %>% unique() %>% length()
-# 
-# # Only 2 patients with D-dimer value:
-# penn_labs %>% 
-#   filter(!is.na(`Fibrin D-dimer FEU`)) %>% 
-#   nrow()
+penn_labs$covid_id %>% unique() %>% length()
 ```
 
 ```{r}
@@ -142,6 +123,9 @@ plot_dat %>%
   theme(legend.position = "none",
         plot.title = element_text(size = 8, hjust = 0.5))
 
+```
+
+```{r fig.width=12, fig.height=8, warning=FALSE}
 plot_dat %>% 
   select(cluster, all_of(lab_value_names)) %>% 
   pivot_longer(- cluster, names_to = 'Lab', values_to = 'lab_value') %>% 
@@ -158,9 +142,7 @@ processed_data_traj <- penn_labs %>%
   mutate(clusterTraj = as.factor(clusterTraj), time) %>%
   select(time, clusterTraj, all_of(lab_value_names)) %>% 
   distinct()
-```
 
-```{r fig.width=12, fig.height=8, warning=FALSE}
 processed_data_traj  %>% 
   pivot_longer(- c(time, clusterTraj), 
                names_to = 'Lab', values_to = 'lab_value') %>% 
@@ -171,7 +153,7 @@ processed_data_traj  %>%
   facet_wrap(~ Lab, scales = 'free_y')
 ```
 
-
-
-
+```{r}
+sessioninfo::session_info()
+```
 

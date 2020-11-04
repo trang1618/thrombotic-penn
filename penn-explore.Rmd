@@ -99,7 +99,7 @@ centroids <- penn_labs[, c('id', 'time', lab_value_names)] %>%
   select(-id)
 
 node_color <- f_graph$node_color
-# save(centroids, node_color, out_trajectories, file = '../data/centroids.rda')
+save(centroids, node_color, out_trajectories, file = 'results/penn-centroids.rda')
 ```
 
 ## Write output

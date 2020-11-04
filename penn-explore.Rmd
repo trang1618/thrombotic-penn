@@ -92,14 +92,14 @@ most_similar_traj <- similarity_df %>%
 
 head(most_similar_traj, 10)
 
-centroids <- penn_labs[, c('id', 'time', lab_value_names)] %>% 
+penn_centroids <- penn_labs[, c('id', 'time', lab_value_names)] %>% 
   left_join(id_node_cluster[, c('id', 'node')], by = 'id') %>% 
   group_by(node) %>% 
   summarise(across(.fns = mean), .groups = 'drop') %>% 
   select(-id)
 
 node_color <- f_graph$node_color
-save(centroids, node_color, out_trajectories, file = 'results/penn-centroids.rda')
+save(penn_centroids, node_color, out_trajectories, file = 'results/penn-centroids.rda')
 ```
 
 ## Write output

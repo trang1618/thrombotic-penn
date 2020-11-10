@@ -95,7 +95,7 @@ head(most_similar_traj, 10)
 penn_centroids <- penn_labs[, c('id', 'time', lab_value_names)] %>% 
   left_join(id_node_cluster[, c('id', 'node')], by = 'id') %>% 
   group_by(node) %>% 
-  summarise(across(.fns = mean), .groups = 'drop') %>% 
+  summarise(across(.fns = mean, na.rm = TRUE), .groups = 'drop') %>% 
   select(-id)
 
 node_color <- f_graph$node_color

@@ -1,0 +1,77 @@
+---
+title: "Compare centroids"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+theme_set(theme_minimal())
+```
+
+
+```{r}
+penn_map <- read_csv('public-data/penn-loinc-map.csv')
+bidmc_map <- read_csv('public-data/bidmc-map.csv') %>% 
+  mutate(labname = labname %>% 
+           gsub(' |-', '_', .) %>%
+           gsub('\\(|\\)', '', .) %>% 
+           tolower())
+nwu_map <- read_csv('public-data/nwu_lab_abbreviations.csv') %>% 
+  drop_na()
+
+load('results/penn-centroids.rda')
+
+# load('results/penn-median-centroids.rda')
+# penn_centroids <- penn_median_centroids
+
+load('results/nwe-centroids.rda')
+nwu_centroids <- centroids
+bidmc_centroids <- read_csv('results/bidmc_centroids.csv')[, -1]
+
+penn_loinc <- penn_centroids %>% 
+  pivot_longer(-c(time, node)) %>%
+  left_join(penn_map %>% select(LOINC, short_name), 
+            by = c('name' = 'short_name')) %>% 
+  mutate(site = 'Penn') %>% 
+  select(-name)
+
+nwu_loinc <- nwu_centroids %>% 
+  slice(-37) %>% 
+  pivot_longer(-c(time, node)) %>%
+  left_join(nwu_map %>% select(LOINC, tda_name), 
+            by = c('name' = 'tda_name')) %>% 
+  mutate(site = 'NWU') %>%
+  select(-name)
+
+bi_loinc <- bidmc_centroids %>% 
+  slice(-37) %>% 
+  pivot_longer(-c(time, node)) %>%
+  left_join(bidmc_map %>% select(LOINC = loinc, labname), 
+            by = c('name' = 'labname')) %>% 
+  mutate(site = 'BI') %>%
+  select(-name) 
+
+all_centroids <- bind_rows(bi_loinc, nwu_loinc, penn_loinc) %>% 
+  left_join(penn_map, by = 'LOINC')
+
+```
+
+```{r}
+# p_median <- all_centroids %>% 
+#   ggplot(aes(x = site, y = value, color = node, group = node)) +
+#   geom_line() +
+#   facet_wrap(~ short_name, scales = 'free_y') +
+#   scale_color_viridis_c() +
+#   labs(x = NULL)
+
+p_mean <- all_centroids %>% 
+  ggplot(aes(x = site, y = value, color = node, group = node)) +
+  geom_line() +
+  facet_wrap(~ short_name, scales = 'free_y') +
+  scale_color_viridis_c() +
+  labs(x = NULL)
+
+p_mean
+p_median
+```
+

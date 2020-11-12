@@ -20,7 +20,7 @@ colnames(old_labs_raw)
 
 table(penn_labs_raw$severe_ind)
 table(penn_labs_raw$concept_type)
-loinc <- read_csv('data/loinc-map.csv')
+loinc <- read_csv('public-data/penn-loinc-map.csv')
 colnames(loinc)
 ```
 
@@ -100,6 +100,14 @@ penn_centroids <- penn_labs[, c('id', 'time', lab_value_names)] %>%
 
 node_color <- f_graph$node_color
 save(penn_centroids, node_color, out_trajectories, file = 'results/penn-centroids.rda')
+
+penn_median_centroids <- penn_labs[, c('id', 'time', lab_value_names)] %>% 
+  left_join(id_node_cluster[, c('id', 'node')], by = 'id') %>% 
+  group_by(node) %>% 
+  summarise(across(.fns = median, na.rm = TRUE), .groups = 'drop') %>% 
+  select(-id)
+
+save(penn_median_centroids, file = 'results/penn-median-centroids.rda')
 ```
 
 ## Write output
